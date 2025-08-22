@@ -1,0 +1,84 @@
+version: "3.8"
+
+services:
+  activemq:
+    image: webcenter/activemq:latest
+    platform: linux/amd64
+    container_name: activemq
+    ports:
+      - "8161:8161"     # Web console
+      - "61616:61616"   # OpenWire
+      - "1099:1099"     # JMX RMI
+    environment:
+      ACTIVEMQ_OPTS: "-Dcom.sun.management.jmxremote=true \
+                      -Dcom.sun.management.jmxremote.port=1099 \
+                      -Dcom.sun.management.jmxremote.rmi.port=1099 \
+                      -Dcom.sun.management.jmxremote.authenticate=false \
+                      -Dcom.sun.management.jmxremote.ssl=false \
+                      -Djava.rmi.server.hostname=activemq"
+    networks:
+      - monitoring
+
+  otel-collector:
+    build: .
+    container_name: otel-collector
+    volumes:
+      - ./otel-config.yaml:/etc/otelcol/config.yaml
+    ports:
+      - "9464:9464"   # Prometheus scrape
+      - "1777:1777"   # pprof/debug
+    depends_on:
+      - activemq
+    networks:
+      - monitoring
+
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    platform: linux/amd64
+    container_name: vmagent
+    command:
+      - "--promscrape.config=/etc/vmagent/scrape.yml"
+      - "--remoteWrite.url=http://victoriametrics:8428/api/v1/write"
+    volumes:
+      - ./vmagent-scrape.yaml:/etc/vmagent/scrape.yml
+    depends_on:
+      - otel-collector
+      - victoriametrics
+    networks:
+      - monitoring
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    platform: linux/amd64
+    container_name: victoriametrics
+    ports:
+      - "8428:8428"
+    volumes:
+      - victoriametrics-data:/storage
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    platform: linux/amd64
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./victoria-datasource.yaml:/etc/grafana/provisioning/datasources/victoria.yaml
+    depends_on:
+      - victoriametrics
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+
+volumes:
+  grafana-storage:
+  grafana-dashboards:
+  victoriametrics-data:

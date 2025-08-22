@@ -19,16 +19,38 @@ services:
     networks:
       - monitoring
 
+  jmx-gatherer:
+    image: eclipse-temurin:17-jdk
+    container_name: jmx-gatherer
+    command: >
+      java
+      -Dotel.jmx.service.url=service:jmx:rmi:///jndi/rmi://activemq:1099/jmxrmi
+      -Dotel.jmx.groovy.script=/scripts/activemq-filter.groovy
+      -Dotel.jmx.interval.milliseconds=10000
+      -Dotel.metrics.exporter=prometheus
+      -Dotel.exporter.prometheus.port=9404
+      -jar /otel/opentelemetry-jmx-metrics.jar
+    volumes:
+      - ./opentelemetry-jmx-metrics.jar:/otel/opentelemetry-jmx-metrics.jar
+      - ./scripts:/scripts
+    ports:
+      - "9404:9404"
+    depends_on:
+      - activemq
+    networks:
+      - monitoring
+
   otel-collector:
-    build: .
+    image: otel/opentelemetry-collector-contrib:0.122.1
     container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./otel-config.yaml:/etc/otelcol/config.yaml
     ports:
-      - "9464:9464"   # Prometheus scrape
-      - "1777:1777"   # pprof/debug
+      - "9464:9464"   # Prometheus scrape from collector
+      - "1777:1777"   # pprof
     depends_on:
-      - activemq
+      - jmx-gatherer
     networks:
       - monitoring
 

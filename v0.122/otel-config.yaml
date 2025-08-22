@@ -1,0 +1,54 @@
+extensions:
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+receivers:
+  prometheus/jmx-gatherer:
+    config:
+      scrape_configs:
+        - job_name: "activemq-gatherer"
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["jmx-gatherer:9404"]
+
+processors:
+  batch:
+  attributes/insert:
+    actions:
+      - key: env
+        action: insert
+        value: test
+      - key: host.name
+        action: insert
+        value: localhost
+      - key: site.name
+        action: insert
+        value: QA
+      - key: otel
+        action: insert
+        value: activeMQ
+  resource/activemq:
+    attributes:
+      - action: upsert
+        key: service.name
+        value: activemq
+      - action: upsert
+        key: service.namespace
+        value: messaging
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:9464"
+  debug:
+    verbosity: detailed
+
+service:
+  extensions: [pprof]
+  telemetry:
+    metrics:
+      level: detailed
+  pipelines:
+    metrics/activemq:
+      receivers: [prometheus/jmx-gatherer]
+      processors: [attributes/insert, resource/activemq, batch]
+      exporters: [prometheus, debug]
